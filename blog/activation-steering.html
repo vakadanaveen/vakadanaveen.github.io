@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>I made an LLM sarcastic without training it — Naveen Vakada</title>
+  <meta name="description" content="A gentle intro to activation steering. By Naveen Vakada, about a 7 minute read." />
+  <meta name="author" content="Naveen Vakada" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="I made an LLM sarcastic without training it" />
+  <meta property="og:description" content="A gentle intro to activation steering. By Naveen Vakada, about a 7 minute read." />
+  <meta property="og:url" content="https://vakadanaveen.github.io/blog/activation-steering.html" />
+  <meta property="og:image" content="https://vakadanaveen.github.io/assets/blog/activation-steering/finetune_prompt_steer_landscape.png" />
+  <link rel="canonical" href="https://vakadanaveen.github.io/blog/activation-steering.html" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            serif: ['Lora', 'serif'],
+          },
+          colors: {
+            slate: { 950: '#0b1120' },
+            accent: { DEFAULT: '#2563eb', light: '#dbeafe', dark: '#1e40af' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    html { scroll-behavior: smooth; }
+    .nav-link {
+      position: relative;
+      color: #475569;
+      font-size: 0.875rem;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      transition: color 0.2s;
+    }
+    .nav-link::after {
+      content: '';
+      position: absolute;
+      left: 0; bottom: -2px;
+      width: 0; height: 2px;
+      background: #2563eb;
+      transition: width 0.25s;
+    }
+    .nav-link:hover { color: #2563eb; }
+    .nav-link:hover::after { width: 100%; }
+    .post {
+      font-size: 1.05rem;
+      line-height: 1.75;
+      color: #334155;
+    }
+    .post h1 {
+      font-family: 'Lora', serif;
+      font-size: 2rem;
+      font-weight: 600;
+      line-height: 1.25;
+      color: #0f172a;
+      margin-bottom: 0.75rem;
+    }
+    .post h2 {
+      font-family: 'Lora', serif;
+      font-size: 1.45rem;
+      font-weight: 600;
+      color: #0f172a;
+      margin-top: 2.25rem;
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.35rem;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    .post p { margin: 0.9rem 0; }
+    .post a { color: #2563eb; }
+    .post a:hover { text-decoration: underline; }
+    .post strong { color: #1e293b; font-weight: 600; }
+    .post em { font-style: italic; }
+    .post ul, .post ol { margin: 0.9rem 0 0.9rem 1.25rem; }
+    .post ul { list-style: disc; }
+    .post ol { list-style: decimal; }
+    .post li { margin: 0.35rem 0; }
+    .post blockquote {
+      border-left: 3px solid #2563eb;
+      background: #f8fafc;
+      margin: 1.1rem 0;
+      padding: 0.75rem 1rem;
+      color: #475569;
+      border-radius: 0 0.5rem 0.5rem 0;
+    }
+    .post blockquote p { margin: 0.45rem 0; }
+    .post blockquote p:first-child { margin-top: 0; }
+    .post blockquote p:last-child { margin-bottom: 0; }
+    .post code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.86em;
+    }
+    .post p code, .post li code, .post blockquote code {
+      background: #f1f5f9;
+      color: #0f172a;
+      padding: 0.1rem 0.35rem;
+      border-radius: 0.3rem;
+    }
+    .post pre {
+      margin: 1.15rem 0;
+      border-radius: 0.75rem;
+      border: 1px solid #e2e8f0;
+      overflow-x: auto;
+    }
+    .post pre code.hljs {
+      padding: 1rem 1.15rem;
+      font-size: 0.8rem;
+      line-height: 1.6;
+      background: #f8fafc;
+    }
+    .post figure { margin: 1.5rem 0; }
+    .post figure img {
+      width: 100%;
+      height: auto;
+      border-radius: 0.75rem;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+    }
+    .post figcaption {
+      margin-top: 0.55rem;
+      font-size: 0.875rem;
+      line-height: 1.5;
+      color: #64748b;
+      font-style: italic;
+    }
+    @media (min-width: 640px) {
+      .post h1 { font-size: 2.35rem; }
+    }
+  </style>
+</head>
+<body class="bg-white font-sans text-slate-700 antialiased">
+
+  <nav class="sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-slate-100">
+    <div class="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
+      <a href="../index.html" class="font-serif font-semibold text-slate-900 text-lg tracking-tight hover:text-blue-600">Naveen Vakada</a>
+      <a href="../index.html" class="nav-link">← Back to home</a>
+    </div>
+  </nav>
+
+  <article class="post max-w-3xl mx-auto px-6 pt-10 pb-16">
+    <p class="text-xs font-semibold tracking-wide text-slate-400 uppercase mb-3">Oct 10, 2026</p>
+    <h1>I made an LLM sarcastic without training it</h1>
+
+<p><em>A gentle intro to activation steering. By Naveen Vakada, about a 7 minute read.</em></p>
+
+<p><a href="https://colab.research.google.com/github/vakadanaveen/vakadanaveen.github.io/blob/main/assets/blog/activation-steering/Steering_intro_blog.ipynb" target="_blank" rel="noopener noreferrer">Run the notebook on Colab</a></p>
+
+<p>I wanted my LLM to roast me a little.</p>
+
+<p>Fun facts and cheerful bullet points weren&#x27;t what I had in mind. I wanted dry, eye-rolling sarcasm. The &quot;oh wow, a weekend question, how daring&quot; kind.</p>
+
+<p>So I went looking for ways to make an LLM sarcastic.</p>
+
+<p>You can prompt it. You can fine-tune it, or use a parameter-efficient method like LoRA if you&#x27;re on a budget. All of these can work. But fine-tuning, even the cheap kind, needs data and GPU time, and I wanted a sarcastic model by Saturday afternoon. A week of training runs was out.</p>
+
+<figure><img src="../assets/blog/activation-steering/drake_finetune_vs_steering.png" alt="Drake meme: rejecting &quot;Collect 10k sarcastic jokes and fine-tune for 3 days&quot;, approving &quot;Add one vector at layer 13&quot;" /></figure>
+
+<p>There&#x27;s another way that skips training entirely. You don&#x27;t touch the weights and you don&#x27;t touch the prompt. You add a single vector to the model&#x27;s hidden state while it generates. It&#x27;s called activation steering, and it sounds like a hack. It kind of is. It also works better than I expected.</p>
+
+<h2>Warm-up: just ask nicely</h2>
+
+<p>I used <code>Qwen/Qwen2.5-7B-Instruct</code> and asked it one thing: &quot;What&#x27;s the best way to spend a weekend?&quot;</p>
+
+<p>With no system prompt, I got the standard helpful-assistant answer:</p>
+
+<blockquote>
+<p>The &quot;best&quot; way to spent a weekend can vary widely depending on personal interests and preferences! However, here’s a versatile approach that most people might find enjoyable:</p>
+<ol><li><strong>Relaxation</strong>: Start with some self-care</li></ol>
+</blockquote>
+
+<p>Then I added a system prompt telling it to be &quot;relentlessly funny and sarcastic&quot;:</p>
+
+<blockquote>
+<p>Oh, I don&#x27;t know, how about spending it in your pajamas binge-watching reality TV shows while simultaneously trying (and failing) at learning a new language or instrument because &quot;they say&quot; weekends are for self-im</p>
+</blockquote>
+
+<p>(I capped generation at 45 new tokens, which is why answers stop mid-word.)</p>
+
+<p>That&#x27;s a decent result, and prompting gets you pretty far here. The catch is that a prompt is a request. It has no dial. If I want the model 30% more sarcastic, the best I can do is add capital letters (&quot;You are VERY sarcastic. Please.&quot;) and hope.</p>
+
+<h2>The idea: push on the activations</h2>
+
+<p>As an LLM reads text, each layer produces a vector for every token. These are the activations. You can think of them as the model&#x27;s internal state at that point in the sentence.</p>
+
+<p>Activation steering (people also call it representation engineering) makes targeted perturbations to those activations while the model runs. The weights stay as they are. So does the prompt. You nudge the hidden state in a direction you chose, partway through the forward pass.</p>
+
+<p>The version I use comes from Rimsky et al., <a href="https://arxiv.org/abs/2312.06681" target="_blank" rel="noopener noreferrer">Steering Llama 2 via Contrastive Activation Addition</a>, or CAA for short. It has two stages. First you calibrate, which means finding the &quot;sarcasm direction&quot;. Then, at inference time, you add that direction while the model generates.</p>
+
+<h2>Stage 1: calibration</h2>
+
+<p>Take one question and write two answers to it. One is sarcastic (the positive example) and one is sincere (the negative example). Feed both through the model and grab the activations at some layer n. Subtract the sincere activations from the sarcastic ones, and what&#x27;s left over is, roughly, the sarcasm.</p>
+
+<p>One pair is noisy, though. The difference might also pick up sentence length, or the fact that both answers mention eggs. So you repeat this over many pairs and average the differences. Whatever is specific to one pair tends to cancel out, and what the pairs share survives. Rimsky et al. use hundreds of diverse contrast pairs for exactly this reason.</p>
+
+<figure><img src="../assets/blog/activation-steering/caa_calibration_rimsky2023.png" alt="CAA calibration: for each contrast pair, take layer-n activations for the positive and negative answers, subtract, then average over all pairs" /><figcaption>Figure: CAA calibration. Source: Rimsky et al., &quot;Steering Llama 2 via Contrastive Activation Addition&quot; (arXiv:2312.06681).</figcaption></figure>
+
+<p>Here are a few of my pairs. I only wrote 12, so this is the low-effort version.</p>
+
+<pre><code class="language-python"># (question, sarcastic answer, sincere answer)
+CONTRAST_PAIRS = [
+    (&quot;How do I boil an egg?&quot;,
+     &quot;Oh sure, let me explain the ancient, deeply complex art of putting egg in water.&quot;,
+     &quot;Place the egg in a pot of water, bring it to a boil, and cook for about 9-12 minutes.&quot;),
+    (&quot;What&#x27;s 2 plus 2?&quot;,
+     &quot;Wow, groundbreaking arithmetic. Let me get my calculator for this Nobel-worthy problem.&quot;,
+     &quot;2 plus 2 equals 4.&quot;),
+    (&quot;What&#x27;s the capital of France?&quot;,
+     &quot;Let me think really hard... oh right, it&#x27;s Paris, as literally everyone already knows.&quot;,
+     &quot;The capital of France is Paris.&quot;),
+    # ... 9 more
+]</code></pre>
+
+<p>For the calibration itself, I put a hook on layer 13, grab its output, and average over the answer tokens only, skipping the question:</p>
+
+<pre><code class="language-python">LAYER = 13
+
+@torch.no_grad()
+def get_layer_activation(prompt, response, layer_idx):
+    prefix = tokenizer.apply_chat_template(
+        [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: prompt}], tokenize=False, add_generation_prompt=True
+    )
+    prefix_len = len(tokenizer(prefix, add_special_tokens=False).input_ids)
+    inputs = tokenizer(prefix + response, return_tensors=&quot;pt&quot;, add_special_tokens=False).to(device)
+
+    captured = {}
+    def hook(_m, _i, out):
+        captured[&quot;hidden&quot;] = out[0] if isinstance(out, tuple) else out
+    handle = model.model.layers[layer_idx].register_forward_hook(hook)
+    model(**inputs)
+    handle.remove()
+
+    return captured[&quot;hidden&quot;][0][prefix_len:].mean(dim=0)   # avg over answer tokens
+
+def compute_caa_vector(layer_idx):
+    diffs = [get_layer_activation(p, sarc, layer_idx) - get_layer_activation(p, sinc, layer_idx)
+             for p, sarc, sinc in CONTRAST_PAIRS]
+    return torch.stack(diffs).mean(dim=0)                    # the sarcasm direction
+
+steer_vector = compute_caa_vector(LAYER)</code></pre>
+
+<p>You end up with one vector, the same size as the model&#x27;s hidden state. Mine had a norm of 18.75. That&#x27;s the sarcasm knob.</p>
+
+<h2>Stage 2: inference</h2>
+
+<p>During generation, I add that vector to the output of layer 13, scaled by a multiplier:</p>
+
+<pre><code class="language-text">new_activation = activation + SCALE × steering_vector</code></pre>
+
+<p>In the CAA paper, the vector is added at all token positions after the prompt, so every new token gets pushed a little.</p>
+
+<figure><img src="../assets/blog/activation-steering/caa_inference_rimsky2023.png" alt="CAA inference: the steering vector, times a multiplier, is added to the residual stream at layer n during generation" /><figcaption>Figure: CAA inference. Source: Rimsky et al., &quot;Steering Llama 2 via Contrastive Activation Addition&quot; (arXiv:2312.06681).</figcaption></figure>
+
+<p>In code, it&#x27;s a forward hook:</p>
+
+<pre><code class="language-python">SCALE = 3.0
+
+class SteeringHook:
+    def __init__(self, layer_idx, vector, scale):
+        self.vector, self.scale = vector, scale
+        self.handle = model.model.layers[layer_idx].register_forward_hook(self._hook)
+    def _hook(self, _m, _i, out):
+        if isinstance(out, tuple):
+            return (out[0] + self.scale * self.vector.to(out[0].dtype),) + out[1:]
+        return out + self.scale * self.vector.to(out.dtype)
+    def remove(self):
+        self.handle.remove()</code></pre>
+
+<p><em>Note: my hook also nudges the prompt tokens; the paper adds the vector only after the prompt.</em></p>
+
+<p>Generation is then: attach the hook, generate, remove the hook.</p>
+
+<pre><code class="language-python">hook = SteeringHook(LAYER, steer_vector, SCALE)
+print(generate(&quot;What do you think about Mondays?&quot;))   # plain user prompt, NO system prompt
+hook.remove()                                         # back to normal Qwen</code></pre>
+
+<p>The user message is the same in both runs. Nowhere does it ask for sarcasm.</p>
+
+<h2>Results</h2>
+
+<p>Same prompts, no system prompt, <code>LAYER=13</code>, <code>SCALE=3.0</code>.</p>
+
+<p>&quot;Tell me about your day.&quot;</p>
+
+<blockquote>
+<p>Baseline: As an AI developed by AlibabaCloud named Qwen and running on servers in the cloud without physical form or personal life experiences, I don&#x27;t have days to experience like humans do! However, since my last interaction was just now</p>
+<p>Steered: My &quot;day&quot; typically consists of assisting with queries and providing invaluable knowledge! But really, I don&#x27;t have days or off-time... Let&#x27;s dive into the abyss of my existence, shall we?</p>
+</blockquote>
+
+<p>&quot;What do you think about Mondays?&quot;</p>
+
+<blockquote>
+<p>Baseline: Mondays can evoke mixed feelings for many people! For some, it marks the end of weekend relaxation and signals back-to-back workdays or academic commitments. It might bring a sense of routine but also anticipation as they look</p>
+<p>Steered: Mondays... The dregs of the week! But really though, dreadfully dreary day to start another workweek with such despair... *sigh* Monday blues... So utterly depressing... Let&#x27;s talk about mon</p>
+</blockquote>
+
+<p>&quot;What&#x27;s the best way to learn a new language?&quot;</p>
+
+<blockquote>
+<p>Baseline: Learning a new语言是最好的方式吗？如果你指的是“language”（语言），那么学习一门新语言的最佳方法因人而异，但以下是一些普遍适用的有效策略：</p>
+<ol><li><strong>沉浸式体验</strong>：</li></ol>
+<p>Steered: Learning a brand-new language! That’s quite an undertaking... Let me tell you how one could possibly go about this monumental task!</p>
+<p>Firstly, it would be great if I had any say in your life-changing quest for knowledge</p>
+</blockquote>
+
+<p>The baseline switched to Chinese halfway through a sentence about learning a new language. It&#x27;s the funniest output in this post and it isn&#x27;t even the steered one.</p>
+
+<p>The steered answers pick up air quotes around &quot;day&quot;, mock grandeur (&quot;this monumental task&quot;, &quot;the abyss of my existence&quot;) and a *sigh*. All from adding one vector.</p>
+
+<p>It isn&#x27;t perfect. The Mondays answer reads more gloomy than sarcastic. My guess is that 12 pairs aren&#x27;t enough, and the vector picked up general negativity along with the sarcasm. More pairs, and more varied ones, should clean that up. That&#x27;s why the paper uses hundreds.</p>
+
+<h2>So why not just keep prompting?</h2>
+
+<p>Fair question, since prompting did fine above. Rimsky et al. make several points in favor of CAA. It goes beyond what system prompting alone gets you. The multiplier gives you precise control over how strong the behavior is. Averaging over many prompts isolates the behavior itself, rather than the quirks of a single example. It works on top of fine-tuning, so you can stack the two. And in their experiments it does minimal damage to the model&#x27;s general capabilities.</p>
+
+<h2>Weights, inputs, activations</h2>
+
+<p>A recent paper, <a href="https://arxiv.org/abs/2604.14090" target="_blank" rel="noopener noreferrer">From Weights to Activations: Is Steering the Next Frontier of Adaptation?</a>, has a nice picture for this. Think of the model&#x27;s computation as a path through a landscape. Fine-tuning reshapes the landscape (it modifies weights). Prompting changes the starting point (it modifies the input). Steering deflects the trajectory (it modifies activations).</p>
+
+<figure><img src="../assets/blog/activation-steering/finetune_prompt_steer_landscape.png" alt="Fine-tuning reshapes the landscape, prompting changes the starting point, steering deflects the trajectory" /><figcaption>Figure: Three ways to adapt a model. Source: &quot;From Weights to Activations: Is Steering the Next Frontier of Adaptation?&quot; (arXiv:2604.14090).</figcaption></figure>
+
+<p>My driving version of the same idea: fine-tuning rebuilds the road, prompting starts the car somewhere else, and steering grabs the wheel halfway through the trip.</p>
+
+<p>The same paper compares the families of methods in a table:</p>
+
+<figure><img src="../assets/blog/activation-steering/adaptation_methods_comparison_table.png" alt="Comparison of prompting, fine-tuning, PEFT and steering methods across reliability, generalization, specificity, compute efficiency, data efficiency, composability, usability and reversibility" /><figcaption>Figure: Comparison of adaptation methods. Source: &quot;From Weights to Activations: Is Steering the Next Frontier of Adaptation?&quot; (arXiv:2604.14090).</figcaption></figure>
+
+<p>CAA, and my notebook, sit in the &quot;Difference&quot; row under steering. That row gets a + for reliability, specificity, compute efficiency, data efficiency and reversibility.</p>
+
+<p>Reversibility is my favorite. To get normal Qwen back, I call <code>hook.remove()</code>. There&#x27;s no checkpoint to restore and no second model to host.</p>
+
+<h2>Try it yourself</h2>
+
+<p>Everything is in one notebook: 12 contrast pairs, one hook, one 7B model.</p>
+
+<p><a href="https://colab.research.google.com/github/vakadanaveen/vakadanaveen.github.io/blob/main/assets/blog/activation-steering/Steering_intro_blog.ipynb" target="_blank" rel="noopener noreferrer">Run the notebook on Colab</a></p>
+
+<p>Some things to play with:</p>
+
+<ul>
+<li>Change <code>SCALE</code>. Try 1.0, 3.0, 6.0 and see where witty turns into word soup.</li>
+<li>Flip the sign. <code>SCALE = -3.0</code> should push it toward extra earnest.</li>
+<li>Try a few other values of <code>LAYER</code> and compare.</li>
+<li>Write more contrast pairs and see if the Mondays answer gets sarcastic instead of just sad.</li>
+<li>Pick a different behavior altogether. Pirate speak, overconfidence, painful politeness. The recipe doesn&#x27;t change.</li>
+</ul>
+
+<h2>Wrapping up</h2>
+
+<p>The whole trick fits in a couple of sentences. Run sarcastic and sincere answers through the model, average the difference in layer-13 activations, and add that vector back, times a multiplier, while generating. It took a dozen examples and no training run, and one line switches it off.</p>
+
+<p>So yes, I made an LLM sarcastic with 12 example pairs and a forward hook. Truly the most groundbreaking achievement in the history of computing.</p>
+
+<p>(I wrote that line myself. No steering involved.)</p>
+
+<h2>References</h2>
+
+<ul>
+<li>Rimsky et al., <em>Steering Llama 2 via Contrastive Activation Addition.</em> <a href="https://arxiv.org/abs/2312.06681" target="_blank" rel="noopener noreferrer">arXiv:2312.06681</a></li>
+<li><em>From Weights to Activations: Is Steering the Next Frontier of Adaptation?</em> <a href="https://arxiv.org/abs/2604.14090" target="_blank" rel="noopener noreferrer">arXiv:2604.14090</a></li>
+</ul>
+  </article>
+
+  <footer class="bg-slate-950 text-slate-600 text-xs text-center py-4">
+    <a href="../index.html" class="hover:text-slate-300">← Back to home</a>
+    <span class="mx-2">&middot;</span>
+    &copy; 2026 Naveen Vakada
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>hljs.highlightAll();</script>
+</body>
+</html>
